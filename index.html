@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#dc2626">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>ตารางงาน | ร้านหม่าล่าทอด</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Prompt', sans-serif; -webkit-tap-highlight-color: transparent; }
+  .tab { transition: background .2s, color .2s; }
+  .tab.active { background: #fff; color: #dc2626; }
+  .seg-on { background: #fff; color: #dc2626; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  .btn { transition: transform .12s ease, filter .2s, box-shadow .2s, opacity .2s; }
+  .btn:hover { filter: brightness(1.05); }
+  .btn:active { transform: scale(.94); }
+  .btn:disabled { opacity: .45; pointer-events: none; }
+
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @keyframes slideL { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: none; } }
+  @keyframes slideR { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: none; } }
+  @keyframes pop { 0% { opacity: 0; transform: scale(.5); } 70% { transform: scale(1.1); } 100% { opacity: 1; transform: scale(1); } }
+  @keyframes shake { 0%,100% { transform: none; } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .fade-up { animation: fadeUp .35s ease backwards; }
+  .slide-l { animation: slideL .35s ease backwards; }
+  .slide-r { animation: slideR .35s ease backwards; }
+  .day-in  { animation: fadeUp .4s ease backwards; animation-delay: calc(var(--i) * 15ms); }
+  .pop     { animation: pop .35s ease backwards; }
+  .shake   { animation: shake .3s; border-color: #ef4444 !important; }
+
+  .spinner { width: 20px; height: 20px; border: 3px solid rgba(255,255,255,.4); border-top-color: #fff;
+             border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+  .spinner.dark { border-color: #fde2e2; border-top-color: #dc2626; width: 32px; height: 32px; }
+  .bar { transition: width .7s cubic-bezier(.2,.8,.2,1); }
+
+  .sheet { opacity: 0; transition: opacity .22s ease; }
+  .sheet.show { opacity: 1; }
+  .sheet .panel { transform: translateY(40px) scale(.98); transition: transform .28s cubic-bezier(.2,.8,.2,1); }
+  .sheet.show .panel { transform: none; }
+
+  #toast { left: 50%; bottom: 20px; transform: translate(-50%, 0); transition: opacity .25s, transform .25s; }
+  #toast.hide { opacity: 0; transform: translate(-50%, 20px); pointer-events: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body class="bg-orange-50 min-h-screen pb-10">
+
+<header class="bg-gradient-to-r from-red-600 to-orange-500 text-white shadow">
+  <div class="max-w-5xl mx-auto px-4 pt-4">
+    <h1 class="text-xl font-semibold">🌶️ <span id="headerName"></span></h1>
+    <nav class="flex gap-1 mt-3 overflow-x-auto whitespace-nowrap">
+      <button id="btn-cal" class="tab active px-3 sm:px-4 py-2 rounded-t-lg" onclick="showTab('cal')">📅 ตาราง</button>
+      <button id="btn-pay" class="tab px-3 sm:px-4 py-2 rounded-t-lg" onclick="showTab('pay')">💰 ค่าแรง</button>
+      <button id="btn-staff" class="tab px-3 sm:px-4 py-2 rounded-t-lg" onclick="showTab('staff')">👥 พนักงาน</button>
+      <button id="btn-settings" class="tab px-3 sm:px-4 py-2 rounded-t-lg" onclick="showTab('settings')">⚙️ ตั้งค่า</button>
+    </nav>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto p-3 sm:p-4">
+
+  <!-- ================= ตาราง ================= -->
+  <section id="tab-cal">
+    <div id="backupBar" class="hidden bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-2.5 mb-3 flex items-center gap-2"></div>
+    <div id="todayCard" class="mb-3"></div>
+
+    <div class="flex items-center justify-between mb-3">
+      <button onclick="changeMonth(-1)" class="btn bg-white shadow rounded-lg px-4 py-2">◀</button>
+      <div class="text-center">
+        <div id="monthLabel" class="text-xl font-semibold"></div>
+        <button onclick="goToday()" class="text-sm text-red-600 underline">เดือนนี้</button>
+      </div>
+      <button onclick="changeMonth(1)" class="btn bg-white shadow rounded-lg px-4 py-2">▶</button>
+    </div>
+
+    <div class="bg-white rounded-xl shadow p-3 mb-3 flex flex-wrap items-center gap-2">
+      <button id="autoBtn" onclick="autoSchedule()" class="btn bg-red-600 text-white rounded-lg px-4 py-2 font-semibold flex items-center gap-2">⚡ จัดอัตโนมัติ</button>
+      <label class="text-sm flex items-center gap-1"><input type="checkbox" id="keepManual"> เก็บวันที่จัดไว้แล้ว</label>
+      <div class="ml-auto flex gap-2">
+        <button id="undoBtn" onclick="undo()" class="btn bg-gray-100 rounded-lg px-3 py-2 text-sm" disabled>↩ ย้อนกลับ</button>
+        <button onclick="clearMonth()" class="btn bg-gray-100 rounded-lg px-3 py-2 text-sm">🗑️ ล้างเดือน</button>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow p-2.5 mb-2">
+      <div class="flex items-center gap-2 flex-wrap">
+        <div id="modeBar" class="flex gap-1 bg-gray-100 rounded-lg p-1"></div>
+        <div class="ml-auto flex gap-1 bg-gray-100 rounded-lg p-1">
+          <button id="v-cal" onclick="setView('cal')" title="ปฏิทิน">📅</button>
+          <button id="v-list" onclick="setView('list')" title="รายการ">📋</button>
+        </div>
+      </div>
+      <div id="focusBar" class="flex flex-wrap gap-1.5 mt-2"></div>
+      <p id="modeHint" class="text-xs text-gray-500 mt-2"></p>
+    </div>
+
+    <div id="calWrap">
+      <div id="calendar" class="grid grid-cols-7 gap-1 sm:gap-2"></div>
+      <div id="listView" class="hidden grid gap-1.5"></div>
+    </div>
+
+    <button onclick="openExport()" class="btn w-full mt-4 bg-gradient-to-r from-gray-900 to-gray-700 text-white rounded-xl py-3 font-semibold text-lg shadow-lg">
+      🖼️ ส่งออกตาราง (รูป / PDF)
+    </button>
+
+    <h2 class="font-semibold text-lg mt-6 mb-2">📊 สรุปเดือนนี้</h2>
+    <div id="summary"></div>
+  </section>
+
+  <!-- ================= ค่าแรง ================= -->
+  <section id="tab-pay" class="hidden">
+    <div class="flex items-center justify-between mb-3">
+      <button onclick="changeMonth(-1)" class="btn bg-white shadow rounded-lg px-4 py-2">◀</button>
+      <div class="text-center"><div class="text-sm text-gray-500">สรุปค่าแรง</div><div id="payMonth" class="text-xl font-semibold"></div></div>
+      <button onclick="changeMonth(1)" class="btn bg-white shadow rounded-lg px-4 py-2">▶</button>
+    </div>
+    <div id="payTotals" class="grid grid-cols-3 gap-2 mb-3"></div>
+    <div id="payList" class="grid gap-2"></div>
+    <button id="payImgBtn" onclick="exportPayroll()" class="btn w-full mt-4 bg-gray-900 text-white rounded-xl py-3 font-semibold flex items-center justify-center gap-2">🖼️ บันทึกสรุปค่าแรงเป็นรูป</button>
+    <p class="text-xs text-gray-500 mt-2">💡 ช่องเบิกและช่องปรับ พิมพ์บวกกันได้ เช่น 200+300 ระบบจะรวมให้เอง</p>
+  </section>
+
+  <!-- ================= พนักงาน ================= -->
+  <section id="tab-staff" class="hidden">
+    <form onsubmit="addEmployee(event)" class="bg-white rounded-xl shadow p-4 grid gap-3 sm:grid-cols-3 sm:items-end">
+      <label>ชื่อเล่น
+        <input id="empName" class="w-full border rounded-lg p-2 mt-1" placeholder="เช่น บอล">
+      </label>
+      <label>ค่าแรงต่อวัน (บาท)
+        <input id="empRate" type="number" min="1" inputmode="numeric" class="w-full border rounded-lg p-2 mt-1" placeholder="400">
+      </label>
+      <button class="btn bg-red-600 text-white rounded-lg py-2.5 font-semibold">+ เพิ่มพนักงาน</button>
+    </form>
+    <p class="text-sm text-gray-500 mt-3">กดวันใต้ชื่อเพื่อตั้ง "หยุดประจำ" · กด "แก้ไข" เพื่อเปลี่ยนสี จำกัดวันต่อเดือน หรือพักงาน</p>
+    <div id="staffList" class="mt-2 grid gap-2"></div>
+  </section>
+
+  <!-- ================= ตั้งค่า ================= -->
+  <section id="tab-settings" class="hidden grid gap-4">
+    <div class="bg-white rounded-xl shadow p-4 grid gap-3 sm:grid-cols-2">
+      <label class="sm:col-span-2">ชื่อร้าน
+        <input id="shopName" onchange="setField('shopName', this.value)" class="w-full border rounded-lg p-2 mt-1">
+      </label>
+      <label>เวลาเริ่มงาน<input id="tStart" type="time" onchange="setField('start', this.value)" class="w-full border rounded-lg p-2 mt-1"></label>
+      <label>เวลาเลิกงาน<input id="tEnd" type="time" onchange="setField('end', this.value)" class="w-full border rounded-lg p-2 mt-1"></label>
+      <label>จัดอัตโนมัติให้เท่ากันตาม
+        <select id="balanceBy" onchange="setField('balanceBy', this.value)" class="w-full border rounded-lg p-2 mt-1">
+          <option value="income">รายได้ (บาท)</option>
+          <option value="days">จำนวนวัน</option>
+        </select>
+      </label>
+      <label>ห้ามทำงานติดกันเกิน (วัน)
+        <input id="maxStreak" type="number" min="0" max="14" onchange="setNum('maxStreak', this.value, 0, 14)" class="w-full border rounded-lg p-2 mt-1">
+        <span class="text-xs text-gray-500">ใส่ 0 = ไม่จำกัด</span>
+      </label>
+    </div>
+
+    <div class="bg-white rounded-xl shadow p-4">
+      <div class="font-semibold">จำนวนคนที่ต้องใช้แต่ละวัน</div>
+      <div class="text-sm text-gray-500 mb-2">ใส่ 0 = ร้านปิดประจำวันนั้น · ปรับเฉพาะบางวันได้ในหน้าต่างของวันนั้น</div>
+      <div id="needGrid" class="grid grid-cols-7 gap-1 sm:gap-2"></div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow p-4">
+      <div class="font-semibold">สำรองข้อมูล</div>
+      <div id="backupInfo" class="text-sm text-gray-500 mb-3"></div>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="exportData()" class="btn bg-blue-600 text-white rounded-lg px-4 py-2">⬇️ ดาวน์โหลดไฟล์สำรอง</button>
+        <label class="btn border rounded-lg px-4 py-2 cursor-pointer">⬆️ นำเข้าไฟล์สำรอง
+          <input type="file" accept=".json" class="hidden" onchange="importData(this)">
+        </label>
+        <button onclick="resetAll()" class="ml-auto text-red-600 underline text-sm">ลบข้อมูลทั้งหมด</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ================= หน้าต่าง: จัดคนรายวัน ================= -->
+<div id="dayModal" class="sheet hidden fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50"
+     onclick="if(event.target===this) closeSheet('dayModal')">
+  <div class="panel bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-4 max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between gap-2">
+      <button onclick="shiftDay(-1)" class="btn w-10 h-10 rounded-full bg-gray-100 text-xl">‹</button>
+      <div class="text-center flex-1">
+        <h3 id="dayTitle" class="text-lg font-semibold"></h3>
+        <div id="dayCount" class="text-sm text-gray-500"></div>
+      </div>
+      <button onclick="shiftDay(1)" class="btn w-10 h-10 rounded-full bg-gray-100 text-xl">›</button>
+    </div>
+    <label class="flex items-center gap-2 bg-gray-100 rounded-lg p-2 mt-3">
+      <input type="checkbox" id="dayClosed" onchange="setClosed(this.checked)"> ร้านปิดวันนี้
+    </label>
+    <div id="dayNeed"></div>
+    <input id="dayNote" maxlength="60" onchange="setNote(this.value)" placeholder="📝 หมายเหตุ เช่น ตลาดนัดพิเศษ, ฝนตก"
+      class="w-full border rounded-lg p-2 mt-2 text-sm">
+    <div id="dayList" class="mt-2"></div>
+    <div class="flex gap-2 mt-4">
+      <button id="fillBtn" onclick="fillDay()" class="btn flex-1 bg-orange-100 text-orange-700 rounded-lg py-3 font-semibold">⚡ เติมคนให้ครบ</button>
+      <button onclick="closeSheet('dayModal')" class="btn flex-1 bg-red-600 text-white rounded-lg py-3 font-semibold">เสร็จ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= หน้าต่าง: แก้ไขพนักงาน ================= -->
+<div id="empModal" class="sheet hidden fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50"
+     onclick="if(event.target===this) closeSheet('empModal')">
+  <div class="panel bg-white w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl p-4 grid gap-3 max-h-[90vh] overflow-y-auto">
+    <h3 class="text-lg font-semibold">แก้ไขพนักงาน</h3>
+    <label>ชื่อเล่น<input id="editName" class="w-full border rounded-lg p-2 mt-1"></label>
+    <label>ค่าแรงต่อวัน (บาท)<input id="editRate" type="number" min="1" inputmode="numeric" class="w-full border rounded-lg p-2 mt-1"></label>
+    <label>ทำได้สูงสุดต่อเดือน (วัน)
+      <input id="editMax" type="number" min="0" max="31" inputmode="numeric" class="w-full border rounded-lg p-2 mt-1">
+      <span class="text-xs text-gray-500">0 = ไม่จำกัด (เหมาะกับพาร์ทไทม์ / นักเรียน)</span>
+    </label>
+    <label class="flex items-start gap-2 bg-gray-100 rounded-lg p-2 text-sm">
+      <input type="checkbox" id="editPause" class="mt-1"> พักงานชั่วคราว (จะไม่ถูกจัดลงตาราง แต่ประวัติยังอยู่)
+    </label>
+    <div>สีประจำตัว<div id="editColors" class="flex flex-wrap gap-2 mt-2"></div></div>
+    <div class="flex gap-2 mt-2">
+      <button onclick="closeSheet('empModal')" class="btn flex-1 bg-gray-100 rounded-lg py-3">ยกเลิก</button>
+      <button onclick="saveEmp()" class="btn flex-1 bg-red-600 text-white rounded-lg py-3 font-semibold">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= หน้าต่าง: ส่งออก ================= -->
+<div id="exportModal" class="sheet hidden fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50"
+     onclick="if(event.target===this) closeSheet('exportModal')">
+  <div class="panel bg-white w-full sm:max-w-3xl rounded-t-2xl sm:rounded-2xl p-4 max-h-[95vh] overflow-y-auto">
+    <div class="flex justify-between items-center">
+      <h3 class="text-lg font-semibold">🖼️ ส่งออกตาราง <span id="exMonth" class="text-red-600"></span></h3>
+      <button onclick="closeSheet('exportModal')" class="text-2xl leading-none px-2">✕</button>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-sm">
+      <label>รูปแบบ
+        <select id="exLayout" onchange="schedulePreview()" class="w-full border rounded-lg p-2 mt-1">
+          <option value="portrait">แนวตั้ง (ดูในมือถือ)</option>
+          <option value="landscape">แนวนอน (พิมพ์ A4)</option>
+        </select>
+      </label>
+      <label>แสดงของ
+        <select id="exWho" onchange="schedulePreview()" class="w-full border rounded-lg p-2 mt-1"></select>
+      </label>
+      <label>ธีมสี
+        <select id="exTheme" onchange="schedulePreview()" class="w-full border rounded-lg p-2 mt-1">
+          <option value="red">แดง-ส้ม</option>
+          <option value="dark">ดำ-ทอง</option>
+          <option value="green">เขียว</option>
+          <option value="blue">น้ำเงิน</option>
+        </select>
+      </label>
+      <label class="flex items-center gap-2 self-end pb-2">
+        <input type="checkbox" id="exPay" onchange="schedulePreview()"> แสดงค่าแรง
+      </label>
+    </div>
+    <div class="relative mt-3 bg-gray-100 rounded-xl min-h-[260px] flex items-center justify-center overflow-hidden p-2">
+      <img id="exPreview" alt="ตัวอย่างตาราง" class="max-w-full max-h-[55vh] object-contain shadow-lg rounded transition-opacity duration-300 opacity-0">
+      <div id="exLoading" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-100/80 text-gray-600 gap-2">
+        <span class="spinner dark"></span>กำลังสร้างภาพ...
+      </div>
+    </div>
+    <div class="flex gap-2 mt-3">
+      <button id="exPng" onclick="downloadPng()" class="btn flex-1 bg-blue-600 text-white rounded-lg py-3 font-semibold">⬇️ รูป PNG</button>
+      <button id="exPdf" onclick="downloadPdf()" class="btn flex-1 bg-gray-900 text-white rounded-lg py-3 font-semibold">📄 PDF</button>
+      <button id="exShare" onclick="shareImg()" class="btn flex-1 bg-green-600 text-white rounded-lg py-3 font-semibold">📤 แชร์</button>
+    </div>
+    <p class="text-xs text-gray-500 mt-2">ถ้าดาวน์โหลดไม่ได้ ให้เปิดเว็บใน Chrome หรือ Safari หรือกดค้างที่ภาพตัวอย่างแล้วเลือกบันทึกรูป</p>
+  </div>
+</div>
+
+<!-- ================= หน้าต่าง: ยืนยัน ================= -->
+<div id="askModal" class="sheet hidden fixed inset-0 bg-black/40 flex items-center justify-center z-[55] p-4">
+  <div class="panel bg-white w-full max-w-sm rounded-2xl p-5">
+    <p id="askMsg" class="whitespace-pre-line"></p>
+    <div class="flex gap-2 mt-5">
+      <button id="askNo" class="btn flex-1 bg-gray-100 rounded-lg py-2.5">ยกเลิก</button>
+      <button id="askYes" class="btn flex-1 bg-red-600 text-white rounded-lg py-2.5 font-semibold">ตกลง</button>
+    </div>
+  </div>
+</div>
+
+<!-- พื้นที่วาดภาพส่งออก (ซ่อนไว้) -->
+<div id="exportWrap" style="position:absolute;left:0;top:0;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none">
+  <div id="exportPage" style="background:#fff;font-family:Prompt,sans-serif;box-sizing:border-box;overflow:hidden"></div>
+</div>
+
+<div id="toast" class="hide fixed z-[60] bg-gray-900 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center text-sm max-w-[92vw]"></div>
+
+<script>
+// ================= ค่าคงที่ =================
+const KEY = 'mala-shift-v2';
+const PALETTE = [
+  ['#fee2e2', '#991b1b'], ['#dbeafe', '#1e40af'], ['#dcfce7', '#166534'], ['#fef3c7', '#92400e'],
+  ['#f3e8ff', '#6b21a8'], ['#cffafe', '#155e75'], ['#fce7f3', '#9d174d'], ['#e0e7ff', '#3730a3'],
+  ['#ffedd5', '#9a3412'], ['#ecfccb', '#3f6212']
+];
+const THEMES = {
+  red:   { g1: '#dc2626', g2: '#f97316', head: '#dc2626', head2: '#b91c1c', line: '#f3d6c7', wk: '#fff7ed' },
+  dark:  { g1: '#111827', g2: '#44403c', head: '#1f2937', head2: '#b45309', line: '#e5e7eb', wk: '#fffbeb' },
+  green: { g1: '#15803d', g2: '#22c55e', head: '#16a34a', head2: '#15803d', line: '#d1fae5', wk: '#f0fdf4' },
+  blue:  { g1: '#1d4ed8', g2: '#0ea5e9', head: '#2563eb', head2: '#1d4ed8', line: '#dbeafe', wk: '#eff6ff' }
+};
+const DAYS = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'];
+const DAYS_FULL = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
+const MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+const MONTHS_S = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const DEFAULT = {
+  shopName: 'ร้านหม่าล่าทอด', start: '17:00', end: '23:00',
+  need: [2, 2, 2, 2, 3, 3, 3], balanceBy: 'income', maxStreak: 4,
+  employees: [], schedule: {}, leave: {}, dayStatus: {},
+  needOv: {}, notes: {}, pay: {}, view: 'cal', lastBackup: 0
+};
+const clone = o => JSON.parse(JSON.stringify(o));
+
+// ================= สถานะ =================
+let data = load();
+let vy = new Date().getFullYear(), vm = new Date().getMonth();
+let modalKey = null, focusId = null, popKey = null, newEmpId = null, mode = 'view';
+let editId = null, editColor = 0, dayDirty = false, hideBackup = false;
+const undoStack = [];
+
+function load() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(KEY)); } catch (e) { d = null; }
+  const x = { ...clone(DEFAULT), ...(d || {}) };
+  ['schedule', 'leave', 'dayStatus', 'needOv', 'notes', 'pay'].forEach(f => {
+    if (!x[f] || typeof x[f] !== 'object' || Array.isArray(x[f])) x[f] = {};
+  });
+  if (!Array.isArray(x.need) || x.need.length !== 7) x.need = clone(DEFAULT.need);
+  x.employees = (Array.isArray(x.employees) ? x.employees : [])
+    .map((e, i) => ({ offDays: [], color: i % PALETTE.length, maxDays: 0, active: true, ...e }));
+  return x;
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(data)); }
+  catch (e) { toast('บันทึกข้อมูลไม่สำเร็จ พื้นที่ในเครื่องอาจเต็ม'); }
+}
+
+// ================= ตัวช่วย =================
+const $ = id => document.getElementById(id);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = n => Math.round(n).toLocaleString('th-TH');
+const wd = d => (d.getDay() + 6) % 7;
+const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const parseKey = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
+const monthDays = () => [...Array(new Date(vy, vm + 1, 0).getDate())].map((_, i) => new Date(vy, vm, i + 1));
+const monthLabel = () => `${MONTHS[vm]} ${vy + 543}`;
+const monthKey = () => `${vy}-${String(vm + 1).padStart(2, '0')}`;
+const emp = id => data.employees.find(e => e.id === id);
+const active = () => data.employees.filter(e => e.active !== false);
+const color = e => PALETTE[(e.color || 0) % PALETTE.length];
+const workers = k => (data.schedule[k] || []).filter(id => emp(id));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const toBlob = c => new Promise(r => c.toBlob(r, 'image/png'));
+const sumText = s => (String(s || '').replace(/,/g, '').match(/[-+]?\d+(\.\d+)?/g) || []).reduce((a, b) => a + Number(b), 0);
+
+function isClosed(d) {
+  const o = data.dayStatus[dateKey(d)];
+  return o ? o === 'closed' : !data.need[wd(d)];
+}
+function needFor(d) {
+  const o = data.needOv[dateKey(d)];
+  return o != null ? o : (data.need[wd(d)] || 1);
+}
+const worksOn = (id, d) => !isClosed(d) && workers(dateKey(d)).includes(id);
+function runBefore(id, d) {               // ทำติดกันมากี่วันก่อนวันนี้
+  let n = 0; const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  for (let i = 0; i < 31; i++) { x.setDate(x.getDate() - 1); if (worksOn(id, x)) n++; else break; }
+  return n;
+}
+function shiftHours() {
+  const [h1, m1] = data.start.split(':').map(Number), [h2, m2] = data.end.split(':').map(Number);
+  let m = (h2 * 60 + m2) - (h1 * 60 + m1);
+  if (m <= 0) m += 1440;
+  return m / 60;
+}
+function stats() {
+  const days = monthDays();
+  return data.employees.map(e => {
+    let n = 0, run = runBefore(e.id, days[0]), maxRun = 0;
+    days.forEach(d => {
+      if (worksOn(e.id, d)) { n++; run++; maxRun = Math.max(maxRun, run); } else run = 0;
+    });
+    return { e, n, hours: n * shiftHours(), pay: n * e.rate, maxRun };
+  }).filter(s => s.e.active !== false || s.n > 0);
+}
+function overMap() {
+  const m = {}, lim = data.maxStreak;
+  if (!lim) return m;
+  const days = monthDays();
+  data.employees.forEach(e => {
+    let run = runBefore(e.id, days[0]);
+    days.forEach(d => {
+      const k = dateKey(d);
+      if (worksOn(e.id, d)) { if (++run > lim) (m[k] = m[k] || new Set()).add(e.id); }
+      else run = 0;
+    });
+  });
+  return m;
+}
+function replay(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+function toast(msg, action, fn) {
+  const t = $('toast');
+  t.innerHTML = `<span>${esc(msg)}</span>` +
+    (action ? `<button id="toastAct" class="ml-3 font-semibold text-yellow-300 underline whitespace-nowrap">${esc(action)}</button>` : '');
+  if (action) $('toastAct').onclick = () => { fn(); t.classList.add('hide'); };
+  t.classList.remove('hide');
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.add('hide'), action ? 5000 : 2500);
+}
+function countUp(el) {
+  const to = +el.dataset.count, suf = el.dataset.suffix || '', t0 = performance.now();
+  const step = t => {
+    const p = Math.min(1, (t - t0) / 700);
+    el.textContent = money(to * (1 - Math.pow(1 - p, 3))) + suf;
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function chipHtml(id, k, over, cls) {
+  const e = emp(id), c = color(e), fire = over[k] && over[k].has(id);
+  return `<div class="${popKey === k + '|' + id ? 'pop ' : ''}${cls} truncate rounded font-medium"
+    style="background:${c[0]};color:${c[1]}">${fire ? '🔥' : ''}${esc(e.name)}</div>`;
+}
+
+// ================= หน้าต่าง =================
+const sheetTimers = {};
+function openSheet(id) {
+  const m = $(id);
+  clearTimeout(sheetTimers[id]);
+  m.classList.remove('hidden'); void m.offsetWidth; m.classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeSheet(id) {
+  const m = $(id);
+  m.classList.remove('show');
+  sheetTimers[id] = setTimeout(() => {
+    m.classList.add('hidden');
+    if (!document.querySelector('.sheet.show')) document.body.style.overflow = '';
+  }, 230);
+}
+function ask(msg, yes = 'ตกลง') {
+  return new Promise(res => {
+    $('askMsg').textContent = msg; $('askYes').textContent = yes;
+    const done = v => { $('askYes').onclick = $('askNo').onclick = null; closeSheet('askModal'); res(v); };
+    $('askYes').onclick = () => done(true);
+    $('askNo').onclick = () => done(false);
+    openSheet('askModal');
+  });
+}
+
+document.addEventListener('keydown', e => {
+  const open = [...document.querySelectorAll('.sheet.show')].map(m => m.id);
+  if (e.key === 'Escape') {
+    if (open.includes('askModal')) return $('askNo').click();
+    return open.forEach(closeSheet);
+  }
+  if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  if (open.length === 1 && open[0] === 'dayModal') {
+    if (e.key === 'ArrowLeft') shiftDay(-1);
+    if (e.key === 'ArrowRight') shiftDay(1);
+    return;
+  }
+  if (open.length) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); return undo(); }
+  if (e.key === 'ArrowLeft') changeMonth(-1);
+  if (e.key === 'ArrowRight') changeMonth(1);
+});
+
+// ================= ย้อนกลับ =================
+function pushUndo() {
+  undoStack.push(JSON.stringify(data));
+  if (undoStack.length > 50) undoStack.shift();
+  updateUndo();
+}
+function undo() {
+  if (!undoStack.length) return toast('ไม่มีอะไรให้ย้อนกลับแล้ว');
+  data = JSON.parse(undoStack.pop());
+  save(); renderAll(); toast('ย้อนกลับแล้ว');
+}
+function updateUndo() { $('undoBtn').disabled = !undoStack.length; }
+
+// ================= แท็บ =================
+const TABS = ['cal', 'pay', 'staff', 'settings'];
+function showTab(name) {
+  TABS.forEach(t => {
+    const on = t === name;
+    $('tab-' + t).classList.toggle('hidden', !on);
+    $('btn-' + t).classList.toggle('active', on);
+    if (on) replay($('tab-' + t), 'fade-up');
+  });
+  renderAll(name === 'cal' ? 'stagger' : null);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ================= เดือน / โหมด =================
+function changeMonth(n) {
+  const d = new Date(vy, vm + n, 1); vy = d.getFullYear(); vm = d.getMonth();
+  renderCalendar('slide'); renderPayroll();
+  const cls = n > 0 ? 'slide-l' : 'slide-r';
+  replay(data.view === 'list' ? $('listView') : $('calendar'), cls);
+  replay($('payList'), cls);
+}
+function goToday() { vy = new Date().getFullYear(); vm = new Date().getMonth(); renderCalendar('stagger'); renderPayroll(); }
+function setView(v) { data.view = v; save(); renderFocus(); renderCalendar('stagger'); }
+function setMode(m) {
+  mode = m;
+  if (m !== 'view' && !focusId && active().length === 1) focusId = active()[0].id;
+  renderFocus(); renderCalendar();
+}
+function setFocus(id) {
+  focusId = (focusId === id && mode === 'view') ? null : id;
+  renderFocus(); renderCalendar();
+}
+
+function renderFocus() {
+  $('modeBar').innerHTML = [['view', '👆 ดู/แก้'], ['paint', '✏️ ลงชื่อ'], ['leave', '🏖️ ลงลา']].map(([m, l]) =>
+    `<button onclick="setMode('${m}')" class="btn px-2.5 sm:px-3 py-1.5 rounded-md text-sm ${mode === m ? 'seg-on font-semibold' : 'text-gray-600'}">${l}</button>`).join('');
+  ['cal', 'list'].forEach(v => $('v-' + v).className = `btn px-2.5 py-1.5 rounded-md text-sm ${data.view === v ? 'seg-on' : 'opacity-60'}`);
+
+  if (focusId && !active().some(e => e.id === focusId)) focusId = null;
+  const list = active();
+  $('focusBar').innerHTML = !list.length ? '' :
+    `<span class="text-xs text-gray-500 self-center mr-1">${mode === 'view' ? 'ไฮไลต์:' : 'เลือกคน:'}</span>` +
+    list.map(e => {
+      const c = color(e), on = focusId === e.id;
+      return `<button onclick="setFocus('${e.id}')" class="btn text-sm rounded-full px-3 py-1 font-medium ${on ? 'shadow-md' : ''}"
+        style="background:${on ? c[1] : c[0]};color:${on ? '#fff' : c[1]}">${on && mode !== 'view' ? '✓ ' : ''}${esc(e.name)}</button>`;
+    }).join('');
+
+  const who = focusId && emp(focusId);
+  $('modeHint').innerHTML =
+    mode === 'view' ? 'แตะวันเพื่อเลือกคนทำงาน ลา หรือปิดร้าน · ปัดซ้าย/ขวาเพื่อเปลี่ยนเดือน · 🔥 = ทำติดกันเกินที่ตั้งไว้'
+    : !who ? '<span class="text-red-600 font-semibold">เลือกชื่อด้านบนก่อน</span> แล้วแตะวันในปฏิทิน'
+    : mode === 'paint' ? `แตะวันเพื่อใส่ <b>${esc(who.name)}</b> ลงทำงาน (แตะซ้ำ = เอาออก)`
+    : `แตะวันที่ <b>${esc(who.name)}</b> ขอลา (แตะซ้ำ = ยกเลิกลา)`;
+}
+
+function tapDay(k) {
+  if (mode === 'view') return openDay(k);
+  if (!focusId) { toast('เลือกชื่อพนักงานก่อน'); return replay($('focusBar'), 'shake'); }
+  if (isClosed(parseKey(k))) return toast('วันนี้ร้านปิด แตะ "ดู/แก้" เพื่อเปิดร้าน');
+  pushUndo();
+  if (mode === 'paint') {
+    if (toggleIn(data.schedule, k, focusId)) {
+      data.leave[k] = (data.leave[k] || []).filter(x => x !== focusId);
+      popKey = k + '|' + focusId;
+      warnMax(focusId);
+    }
+  } else if (toggleIn(data.leave, k, focusId)) {
+    data.schedule[k] = (data.schedule[k] || []).filter(x => x !== focusId);
+  }
+  if (navigator.vibrate) navigator.vibrate(12);
+  save(); renderCalendar();
+}
+
+// ================= การ์ดวันนี้ / แถบสำรองข้อมูล =================
+function renderToday() {
+  const el = $('todayCard');
+  if (!active().length) { el.innerHTML = ''; return; }
+  const t = new Date(), t2 = new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1);
+  const box = (label, d) => {
+    const k = dateKey(d);
+    let body;
+    if (isClosed(d)) body = '<span class="text-sm text-gray-400">ร้านปิด 💤</span>';
+    else {
+      const ws = workers(k);
+      body = ws.length ? ws.map(id => chipHtml(id, k, {}, 'px-2 py-0.5 text-sm max-w-full')).join('')
+        : '<span class="text-sm text-red-500">ยังไม่ได้จัดคน</span>';
+    }
+    return `<button onclick="jumpTo('${k}')" class="btn flex-1 min-w-0 text-left bg-white rounded-xl shadow-sm p-2.5">
+      <div class="text-xs text-gray-500"><b class="text-red-600">${label}</b> · ${DAYS[wd(d)]} ${d.getDate()} ${MONTHS_S[d.getMonth()]}</div>
+      <div class="flex flex-wrap gap-1 mt-1">${body}</div></button>`;
+  };
+  el.innerHTML = `<div class="flex gap-2">${box('วันนี้', t)}${box('พรุ่งนี้', t2)}</div>`;
+}
+function jumpTo(k) {
+  const d = parseKey(k); vy = d.getFullYear(); vm = d.getMonth();
+  renderCalendar(); renderPayroll(); openDay(k);
+}
+function renderBackup() {
+  const el = $('backupBar');
+  const days = data.lastBackup ? Math.floor((Date.now() - data.lastBackup) / 864e5) : null;
+  const show = !hideBackup && data.employees.length > 0 && (days === null || days >= 7);
+  el.classList.toggle('hidden', !show);
+  if (show) el.innerHTML = `<span class="flex-1">💾 ${days === null ? 'ยังไม่เคยสำรองข้อมูล' : `ไม่ได้สำรองข้อมูลมา ${days} วันแล้ว`}
+    ถ้าล้างเบราว์เซอร์หรือเปลี่ยนเครื่อง ข้อมูลจะหาย</span>
+    <button onclick="exportData()" class="btn bg-amber-500 text-white rounded-lg px-3 py-1.5 font-semibold whitespace-nowrap">สำรองเลย</button>
+    <button onclick="hideBackup=true;renderBackup()" class="px-1 text-amber-700">✕</button>`;
+}
+
+// ================= ปฏิทิน / รายการ =================
+function renderCalendar(anim) {
+  if (focusId && !active().some(e => e.id === focusId)) focusId = null;
+  $('monthLabel').textContent = monthLabel();
+  const isList = data.view === 'list';
+  $('calendar').classList.toggle('hidden', isList);
+  $('listView').classList.toggle('hidden', !isList);
+
+  const days = monthDays(), today = dateKey(new Date()), over = overMap(), stagger = anim === 'stagger';
+
+  const pieces = days.map((d, idx) => {
+    const k = dateKey(d), closed = isClosed(d), ws = workers(k), need = needFor(d);
+    const lv = (data.leave[k] || []).filter(id => emp(id));
+    const note = data.notes[k];
+    const dim = focusId && !ws.includes(focusId) ? 'opacity-40' : '';
+    const st = stagger ? `style="--i:${idx}"` : '';
+    const badge = ws.length === need ? 'bg-green-100 text-green-700' : ws.length > need ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700';
+    return { d, k, closed, ws, need, lv, note, dim, st, badge, short: ws.length < need };
+  });
+
+  if (isList) {
+    $('listView').innerHTML = pieces.map(p => {
+      const cls = `btn w-full text-left rounded-xl p-2.5 flex gap-3 items-center ${stagger ? 'day-in' : ''} ${p.k === today ? 'ring-2 ring-red-500' : ''}`;
+      const dateBox = `<div class="w-11 text-center shrink-0"><div class="text-xs ${wd(p.d) >= 5 ? 'text-red-600' : 'text-gray-500'}">${DAYS[wd(p.d)]}</div>
+        <div class="text-xl font-semibold leading-tight">${p.d.getDate()}</div></div>`;
+      const noteH = p.note ? `<div class="text-xs text-amber-700 truncate mt-1">📝 ${esc(p.note)}</div>` : '';
+      if (p.closed) return `<button onclick="tapDay('${p.k}')" ${p.st} class="${cls} bg-gray-200 text-gray-500 ${focusId ? 'opacity-40' : ''}">
+        ${dateBox}<div class="flex-1 min-w-0 text-sm">ร้านปิด${noteH}</div></button>`;
+      const chips = p.ws.map(id => chipHtml(id, p.k, over, 'px-2 py-0.5 text-sm max-w-full')).join('');
+      const lvH = p.lv.length ? `<div class="text-xs text-gray-400 truncate mt-1">ลา: ${p.lv.map(id => esc(emp(id).name)).join(', ')}</div>` : '';
+      return `<button onclick="tapDay('${p.k}')" ${p.st} class="${cls} ${p.dim} bg-white shadow-sm ${p.short ? 'border border-red-200' : ''}">
+        ${dateBox}
+        <div class="flex-1 min-w-0"><div class="flex flex-wrap gap-1">${chips || '<span class="text-sm text-gray-400">ยังไม่มีคน</span>'}</div>${lvH}${noteH}</div>
+        <span class="text-xs rounded px-1.5 py-0.5 shrink-0 ${p.badge}">${p.ws.length}/${p.need}</span></button>`;
+    }).join('');
+  } else {
+    let h = DAYS.map((d, i) => `<div class="text-center text-xs sm:text-sm font-semibold py-1 ${i >= 5 ? 'text-red-600' : ''}">${d}</div>`).join('');
+    for (let i = 0; i < wd(days[0]); i++) h += '<div></div>';
+    pieces.forEach(p => {
+      const cls = `btn min-w-0 min-h-[80px] sm:min-h-[104px] rounded-lg p-1 sm:p-1.5 flex flex-col text-left ${stagger ? 'day-in' : ''} ${p.k === today ? 'ring-2 ring-red-500' : ''}`;
+      const noteH = p.note ? `<div class="w-full truncate text-[10px] text-amber-700 mt-0.5">📝${esc(p.note)}</div>` : '';
+      if (p.closed) {
+        h += `<button onclick="tapDay('${p.k}')" ${p.st} class="${cls} bg-gray-200 text-gray-400 ${focusId ? 'opacity-40' : ''}">
+          <span class="text-sm font-semibold">${p.d.getDate()}</span><span class="text-[10px] sm:text-xs">ร้านปิด</span>${noteH}</button>`;
+        return;
+      }
+      const chips = p.ws.map(id => chipHtml(id, p.k, over, 'w-full px-1 text-[10px] sm:text-xs mt-0.5')).join('');
+      const lvH = p.lv.length ? `<div class="w-full truncate text-[10px] text-gray-400 mt-0.5">ลา: ${p.lv.map(id => esc(emp(id).name)).join(', ')}</div>` : '';
+      h += `<button onclick="tapDay('${p.k}')" ${p.st} class="${cls} ${p.dim} bg-white shadow-sm hover:shadow-md ${p.short ? 'border border-red-200' : ''}">
+        <div class="w-full flex justify-between items-center"><span class="text-sm font-semibold">${p.d.getDate()}</span>
+        <span class="text-[10px] rounded px-1 ${p.badge}">${p.ws.length}/${p.need}</span></div>${chips}${lvH}${noteH}</button>`;
+    });
+    $('calendar').innerHTML = h;
+  }
+  popKey = null;
+  renderSummary(!!anim);
+  renderToday();
+}
+
+function renderSummary(anim) {
+  const st = stats(), el = $('summary');
+  if (!st.length) {
+    el.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-gray-500">ยังไม่มีพนักงาน
+      <button onclick="showTab('staff')" class="text-red-600 underline">ไปเพิ่มพนักงาน</button></div>`;
+    return;
+  }
+  const pays = st.map(s => s.pay), max = Math.max(...pays, 1);
+  const diff = Math.max(...pays) - Math.min(...pays), total = pays.reduce((a, b) => a + b, 0);
+  const short = monthDays().filter(d => !isClosed(d) && workers(dateKey(d)).length < needFor(d)).length;
+  const good = diff <= Math.max(...st.map(s => s.e.rate));
+  const card = (label, val, suf, cls, note = '') => `<div class="bg-white rounded-xl shadow p-3">
+    <div class="text-xs text-gray-500">${label}</div>
+    <div class="text-lg font-semibold ${cls}" data-count="${val}" data-suffix="${suf}">${money(val)}${suf}</div>
+    ${note ? `<div class="text-[11px] text-gray-400">${note}</div>` : ''}</div>`;
+
+  el.innerHTML = `
+    <div class="grid grid-cols-3 gap-2 mb-3">
+      ${card('ค่าแรงรวม', total, ' ฿', '')}
+      ${card('ส่วนต่างรายได้', diff, ' ฿', good ? 'text-green-600' : 'text-orange-600', good ? 'เกลี่ยดีแล้ว ✓' : 'ยังต่างกันเยอะ')}
+      ${card('วันที่คนไม่ครบ', short, ' วัน', short ? 'text-red-600' : 'text-green-600')}
+    </div>
+    <div class="bg-white rounded-xl shadow p-3 grid gap-3">
+      ${st.map(s => {
+        const c = color(s.e), pct = s.pay / max * 100, ov = data.maxStreak && s.maxRun > data.maxStreak;
+        const cap = s.e.maxDays ? ` / ${s.e.maxDays}` : '';
+        return `<div>
+          <div class="flex justify-between items-baseline gap-2 text-sm"><span class="font-semibold">${esc(s.e.name)}</span><b>${money(s.pay)} ฿</b></div>
+          <div class="h-2.5 bg-gray-100 rounded-full mt-1 overflow-hidden">
+            <div class="bar h-full rounded-full" data-w="${pct}" style="width:${anim ? 0 : pct}%;background:${c[1]}"></div></div>
+          <div class="text-xs text-gray-500 mt-1">${s.n}${cap} วัน · ${+s.hours.toFixed(1)} ชม. · ติดกันสูงสุด
+            <span class="${ov ? 'text-red-600 font-semibold' : ''}">${s.maxRun} วัน${ov ? ' 🔥' : ''}</span></div>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  if (anim) {
+    requestAnimationFrame(() => requestAnimationFrame(() =>
+      el.querySelectorAll('.bar').forEach(b => b.style.width = b.dataset.w + '%')));
+    el.querySelectorAll('[data-count]').forEach(countUp);
+  }
+}
+
+// ================= หน้าต่างรายวัน =================
+function openDay(k) { modalKey = k; dayDirty = false; renderDay(); openSheet('dayModal'); }
+function markDayEdit() { if (!dayDirty) { pushUndo(); dayDirty = true; } }
+function shiftDay(n) {
+  const d = parseKey(modalKey); d.setDate(d.getDate() + n); modalKey = dateKey(d);
+  if (d.getMonth() !== vm || d.getFullYear() !== vy) { vy = d.getFullYear(); vm = d.getMonth(); renderCalendar('slide'); renderPayroll(); }
+  renderDay(true);
+}
+
+function renderDay(anim) {
+  if (!modalKey) return;
+  const d = parseKey(modalKey), closed = isClosed(d);
+  $('dayTitle').textContent = `วัน${DAYS_FULL[wd(d)]}ที่ ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  $('dayClosed').checked = closed;
+  $('dayNote').value = data.notes[modalKey] || '';
+  const ws = workers(modalKey), lv = data.leave[modalKey] || [], need = needFor(d), st = stats();
+  $('dayCount').innerHTML = closed ? 'ร้านปิด'
+    : `ทำงาน <b class="${ws.length >= need ? 'text-green-600' : 'text-red-600'}">${ws.length}</b> / ต้องการ ${need} คน · ${data.start}–${data.end} น.`;
+
+  const ov = data.needOv[modalKey] != null;
+  $('dayNeed').innerHTML = closed ? '' : `
+    <div class="flex items-center justify-between bg-gray-50 rounded-lg p-2 mt-2">
+      <span class="text-sm">จำนวนคนวันนี้ <span class="text-xs ${ov ? 'text-orange-600' : 'text-gray-400'}">${ov ? '(ปรับเฉพาะวันนี้)' : '(ค่าปกติ)'}</span></span>
+      <div class="flex items-center gap-2">
+        <button onclick="setDayNeed(-1)" class="btn w-8 h-8 rounded-full bg-white shadow">−</button>
+        <b class="w-6 text-center">${need}</b>
+        <button onclick="setDayNeed(1)" class="btn w-8 h-8 rounded-full bg-white shadow">+</button>
+        ${ov ? `<button onclick="setDayNeed(0)" class="text-xs text-red-600 underline">คืนค่า</button>` : ''}
+      </div>
+    </div>`;
+  $('fillBtn').classList.toggle('hidden', closed || ws.length >= need);
+
+  const list = $('dayList');
+  const people = data.employees.filter(e => e.active !== false || ws.includes(e.id) || lv.includes(e.id));
+  if (closed) list.innerHTML = `<p class="text-center text-gray-500 py-6">วันนี้ร้านปิด 💤</p>`;
+  else if (!people.length) list.innerHTML = `<p class="text-center text-gray-500 py-6">ยังไม่มีพนักงาน</p>`;
+  else list.innerHTML = people.map(e => {
+    const c = color(e), on = ws.includes(e.id), off = lv.includes(e.id);
+    const s = st.find(x => x.e.id === e.id) || { n: 0, pay: 0 };
+    const regular = (e.offDays || []).includes(wd(d));
+    const full = e.maxDays && s.n >= e.maxDays && !on;
+    return `<div class="flex items-center gap-2 py-2 border-b">
+      <span class="w-3 h-3 rounded-full shrink-0" style="background:${c[1]}"></span>
+      <div class="flex-1 min-w-0">
+        <div class="font-medium truncate">${esc(e.name)}</div>
+        <div class="text-xs text-gray-500">เดือนนี้ ${s.n}${e.maxDays ? '/' + e.maxDays : ''} วัน · ${money(s.pay)} ฿
+          ${regular ? ' · <span class="text-orange-600">หยุดประจำ</span>' : ''}${full ? ' · <span class="text-orange-600">ครบโควตา</span>' : ''}</div>
+      </div>
+      <button onclick="toggleWork('${e.id}')" class="btn px-3 py-2 rounded-lg text-sm font-semibold ${on ? 'bg-red-600 text-white' : 'bg-gray-100'}">${on ? '✓ ทำงาน' : 'ทำงาน'}</button>
+      <button onclick="toggleLeave('${e.id}')" class="btn px-3 py-2 rounded-lg text-sm ${off ? 'bg-gray-700 text-white' : 'bg-gray-100'}">ลา</button>
+    </div>`;
+  }).join('');
+  if (anim) replay(list, 'fade-up');
+}
+
+function toggleIn(map, k, id) {
+  const a = map[k] || [];
+  map[k] = a.includes(id) ? a.filter(x => x !== id) : [...a, id];
+  return map[k].includes(id);
+}
+function warnMax(id) {
+  const e = emp(id); if (!e || !e.maxDays) return;
+  const s = stats().find(x => x.e.id === id);
+  if (s && s.n > e.maxDays) toast(`${e.name} เกินโควตา ${e.maxDays} วัน/เดือนแล้ว`);
+}
+function toggleWork(id) {
+  markDayEdit();
+  if (toggleIn(data.schedule, modalKey, id)) {
+    data.leave[modalKey] = (data.leave[modalKey] || []).filter(x => x !== id);
+    popKey = modalKey + '|' + id;
+    warnMax(id);
+  }
+  save(); renderDay(); renderCalendar();
+}
+function toggleLeave(id) {
+  markDayEdit();
+  if (toggleIn(data.leave, modalKey, id)) data.schedule[modalKey] = (data.schedule[modalKey] || []).filter(x => x !== id);
+  save(); renderDay(); renderCalendar();
+}
+function setClosed(checked) {
+  markDayEdit();
+  const d = parseKey(modalKey), byDefault = !data.need[wd(d)];
+  if (checked === byDefault) delete data.dayStatus[modalKey];
+  else data.dayStatus[modalKey] = checked ? 'closed' : 'open';
+  if (checked) delete data.schedule[modalKey];
+  save(); renderDay(true); renderCalendar();
+}
+function setDayNeed(delta) {
+  markDayEdit();
+  const d = parseKey(modalKey);
+  if (!delta) delete data.needOv[modalKey];
+  else {
+    const v = Math.max(1, Math.min(20, needFor(d) + delta)), def = data.need[wd(d)] || 1;
+    if (v === def) delete data.needOv[modalKey]; else data.needOv[modalKey] = v;
+  }
+  save(); renderDay(); renderCalendar();
+}
+function setNote(v) {
+  markDayEdit();
+  v = v.trim();
+  if (v) data.notes[modalKey] = v.slice(0, 60); else delete data.notes[modalKey];
+  save(); renderCalendar();
+}
+function fillDay() {
+  const k = modalKey, d = parseKey(k), need = needFor(d), ws = workers(k), leave = data.leave[k] || [];
+  const st = stats(), byInc = data.balanceBy === 'income', lim = data.maxStreak || Infinity;
+  const cand = active()
+    .filter(e => !ws.includes(e.id) && !leave.includes(e.id) && !(e.offDays || []).includes(wd(d)))
+    .map(e => {
+      const s = st.find(x => x.e.id === e.id) || { n: 0, pay: 0 };
+      return { e, n: s.n, score: byInc ? s.pay : s.n, run: runBefore(e.id, d) };
+    })
+    .filter(x => !x.e.maxDays || x.n < x.e.maxDays)
+    .sort((a, b) => ((a.run >= lim) - (b.run >= lim)) || (a.score - b.score) || (a.run - b.run));
+  const add = cand.slice(0, need - ws.length).map(x => x.e.id);
+  if (!add.length) return toast('ไม่มีคนว่างให้เติมแล้ว');
+  markDayEdit();
+  data.schedule[k] = [...ws, ...add];
+  save(); renderDay(); renderCalendar();
+  toast(`เติม ${add.map(id => emp(id).name).join(', ')} แล้ว ✓`);
+}
+
+// ================= จัดอัตโนมัติ =================
+function bestSchedule(keep) {
+  const emps = active(), byIncome = data.balanceBy === 'income', lim = data.maxStreak || Infinity;
+  const days = monthDays();
+  const info = days.filter(d => !isClosed(d)).map(d => {
+    const k = dateKey(d), leave = data.leave[k] || [];
+    const fixed = keep ? workers(k).filter(id => !leave.includes(id)) : [];
+    const pool = emps.filter(e => !leave.includes(e.id) && !(e.offDays || []).includes(wd(d)) && !fixed.includes(e.id));
+    return { k, d, need: needFor(d), fixed, pool };
+  });
+  const seed = {}; emps.forEach(e => seed[e.id] = runBefore(e.id, days[0]));
+  const lastPrev = new Date(vy, vm, 0);
+
+  let best = null;
+  for (let t = 0; t < 300; t++) {
+    const score = {}, streak = {}, cnt = {}, plan = {};
+    emps.forEach(e => { score[e.id] = 0; streak[e.id] = seed[e.id]; cnt[e.id] = 0; });
+    let short = 0, over = 0, prev = lastPrev;
+
+    for (const x of info) {
+      if ((x.d - prev) / 864e5 > 1.5) emps.forEach(e => streak[e.id] = 0);   // วันปิดร้าน = ได้พัก
+      prev = x.d;
+      const pick = [...x.fixed], rnd = {};
+      x.pool.forEach(e => rnd[e.id] = Math.random());
+      const cand = x.pool.filter(e => !e.maxDays || cnt[e.id] < e.maxDays).sort((a, b) =>
+        ((streak[a.id] >= lim) - (streak[b.id] >= lim)) ||   // คนที่ทำติดกันครบแล้วไว้ท้ายสุด
+        (score[a.id] - score[b.id]) ||                        // ได้เงินน้อยสุดก่อน
+        (streak[a.id] - streak[b.id]) ||                      // ทำติดกันน้อยกว่าก่อน
+        (rnd[a.id] - rnd[b.id]));                             // สุ่ม
+      for (const e of cand) { if (pick.length >= x.need) break; pick.push(e.id); }
+      if (pick.length < x.need) short++;
+      emps.forEach(e => {
+        if (pick.includes(e.id)) {
+          score[e.id] += byIncome ? e.rate : 1; cnt[e.id]++;
+          if (++streak[e.id] > lim) over++;
+        } else streak[e.id] = 0;
+      });
+      plan[x.k] = pick;
+    }
+    const free = emps.filter(e => !(e.maxDays && cnt[e.id] >= e.maxDays)).map(e => score[e.id]);
+    const spread = free.length ? Math.max(...free) - Math.min(...free) : 0;
+    const cost = short * 1e9 + over * 1e6 + spread;
+    if (!best || cost < best.cost) best = { plan, short, cost };
+  }
+  return best;
+}
+
+async function autoSchedule() {
+  if (!active().length) { toast('เพิ่มพนักงานก่อนนะ'); return showTab('staff'); }
+  const keep = $('keepManual').checked;
+  const hasData = monthDays().some(d => workers(dateKey(d)).length);
+  if (!keep && hasData && !(await ask(`จัดตารางเดือน${monthLabel()}ใหม่ทั้งหมด?\nถ้าไม่ชอบ กดย้อนกลับได้`, 'จัดใหม่'))) return;
+
+  const btn = $('autoBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> กำลังคิด...';
+  await sleep(60);
+
+  pushUndo();
+  const res = bestSchedule(keep);
+  monthDays().forEach(d => {
+    const k = dateKey(d);
+    if (isClosed(d)) delete data.schedule[k]; else data.schedule[k] = res.plan[k] || [];
+  });
+  save();
+
+  await sleep(250);
+  btn.disabled = false; btn.innerHTML = '⚡ จัดอัตโนมัติ';
+  renderCalendar('stagger'); renderPayroll();
+  toast(res.short ? `จัดเสร็จ แต่มี ${res.short} วันที่คนไม่พอ` : 'จัดตารางเสร็จแล้ว ✨', 'ย้อนกลับ', undo);
+}
+
+function clearMonth() {
+  if (!monthDays().some(d => workers(dateKey(d)).length)) return toast('เดือนนี้ยังว่างอยู่แล้ว');
+  pushUndo();
+  monthDays().forEach(d => delete data.schedule[dateKey(d)]);
+  save(); renderCalendar('stagger'); renderPayroll();
+  toast(`ล้างตารางเดือน${monthLabel()}แล้ว`, 'ย้อนกลับ', undo);
+}
+
+// ================= ค่าแรง =================
+function payGet(id) { return ((data.pay[monthKey()] || {})[id]) || { adv: '', adj: '', paid: false }; }
+function payNumbers() {
+  return stats().map(s => {
+    const r = payGet(s.e.id), adv = sumText(r.adv), adj = sumText(r.adj);
+    return { ...s, r, adv, adj, net: s.pay - adv + adj };
+  });
+}
+function renderPayroll() {
+  $('payMonth').textContent = monthLabel();
+  const rows = payNumbers();
+  if (!rows.length) {
+    $('payTotals').innerHTML = '';
+    $('payList').innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-gray-500">ยังไม่มีพนักงาน</div>`;
+    return;
+  }
+  $('payList').innerHTML = rows.map(x => {
+    const c = color(x.e), id = x.e.id;
+    return `<div id="pc-${id}" class="bg-white rounded-xl shadow p-3 transition-opacity">
+      <div class="flex justify-between items-center gap-2">
+        <div class="flex items-center gap-2 min-w-0"><span class="w-3 h-3 rounded-full shrink-0" style="background:${c[1]}"></span>
+          <b class="truncate">${esc(x.e.name)}</b></div>
+        <label class="text-sm flex items-center gap-1.5 bg-green-50 text-green-700 rounded-lg px-2 py-1">
+          <input type="checkbox" ${x.r.paid ? 'checked' : ''} onchange="setPay('${id}','paid',this.checked)"> จ่ายแล้ว</label>
+      </div>
+      <div class="text-sm text-gray-500 mt-1">${x.n} วัน × ${money(x.e.rate)} = <b class="text-gray-800">${money(x.pay)} ฿</b></div>
+      <div class="grid grid-cols-2 gap-2 mt-2">
+        <label class="text-xs text-gray-500">เบิกล่วงหน้า
+          <input value="${esc(x.r.adv)}" placeholder="เช่น 200+300" onchange="setPay('${id}','adv',this.value)"
+            class="w-full border rounded-lg p-2 mt-1 text-sm text-gray-800">
+          <span id="advs-${id}" class="text-red-600"></span></label>
+        <label class="text-xs text-gray-500">ปรับเพิ่ม / หัก
+          <input value="${esc(x.r.adj)}" placeholder="เช่น +100 หรือ -50" onchange="setPay('${id}','adj',this.value)"
+            class="w-full border rounded-lg p-2 mt-1 text-sm text-gray-800">
+          <span id="adjs-${id}"></span></label>
+      </div>
+      <div class="flex justify-between items-center mt-2 pt-2 border-t">
+        <span class="text-sm">รับสุทธิ</span><b id="net-${id}" class="text-lg"></b>
+      </div>
+    </div>`;
+  }).join('');
+  refreshPay();
+}
+function refreshPay() {
+  const rows = payNumbers();
+  let tn = 0, ta = 0, paid = 0;
+  rows.forEach(x => {
+    tn += x.net; ta += x.adv; if (x.r.paid) paid++;
+    const id = x.e.id, n = $('net-' + id);
+    if (!n) return;
+    n.textContent = money(x.net) + ' ฿';
+    n.className = 'text-lg ' + (x.net < 0 ? 'text-red-600' : 'text-green-700');
+    $('pc-' + id).classList.toggle('opacity-60', x.r.paid);
+    $('advs-' + id).textContent = x.adv ? `รวม −${money(x.adv)} ฿` : '';
+    $('adjs-' + id).textContent = x.adj ? `รวม ${x.adj > 0 ? '+' : ''}${money(x.adj)} ฿` : '';
+    $('adjs-' + id).className = x.adj < 0 ? 'text-red-600' : 'text-green-700';
+  });
+  const card = (l, v, cls = '') => `<div class="bg-white rounded-xl shadow p-3"><div class="text-xs text-gray-500">${l}</div><div class="text-lg font-semibold ${cls}">${v}</div></div>`;
+  $('payTotals').innerHTML = card('ต้องจ่ายรวม', money(tn) + ' ฿') + card('เบิกไปแล้ว', money(ta) + ' ฿', 'text-red-600') +
+    card('จ่ายแล้ว', `${paid}/${rows.length} คน`, paid === rows.length ? 'text-green-600' : 'text-orange-600');
+}
+function setPay(id, f, v) {
+  const m = data.pay[monthKey()] = data.pay[monthKey()] || {};
+  const r = m[id] = m[id] || { adv: '', adj: '', paid: false };
+  r[f] = f === 'paid' ? !!v : String(v).trim().slice(0, 80);
+  save(); refreshPay();
+  if (f === 'paid' && v) toast(`${emp(id).name} จ่ายแล้ว ✓`);
+}
+
+// ================= ส่งออกรูป / PDF =================
+let exToken = 0, exCanvas = null, exTimer = null, exChain = Promise.resolve(), exUrl = null;
+const exOpts = () => ({ layout: $('exLayout').value, who: $('exWho').value, theme: $('exTheme').value, pay: $('exPay').checked });
+
+function exportHtml(o) {
+  const L = o.layout === 'landscape', W = L ? 1123 : 794, H = L ? 794 : 1123, P = L ? 26 : 30;
+  const t = THEMES[o.theme] || THEMES.red;
+  const days = monthDays(), first = wd(days[0]), weeks = Math.ceil((first + days.length) / 7);
+  const person = o.who ? emp(o.who) : null;
+  const st = stats().filter(s => person ? s.e.id === person.id : s.n > 0);
+  const cols = L ? 4 : 2, legRows = Math.max(1, Math.ceil(st.length / cols));
+  const headerH = L ? 92 : 110, theadH = 38, legendH = person ? 0 : legRows * 38 + 14, footH = 24;
+  const cellH = Math.max(48, Math.floor((H - 2 * P - headerH - 12 - theadH - legendH - footH - 8) / weeks));
+
+  const maxN = Math.max(1, ...days.map(d => isClosed(d) ? 0 : workers(dateKey(d)).length));
+  let fs = L ? 13 : 14, twoCol = false;
+  const fits = () => (twoCol ? Math.ceil(maxN / 2) : maxN) * (fs * 1.5 + 4) + fs + 16 <= cellH;
+  while (!fits() && fs > 10) fs--;
+  if (!fits()) { twoCol = true; fs = L ? 13 : 14; while (!fits() && fs > 9) fs--; }
+
+  let rows = '';
+  for (let i = 0; i < weeks * 7; i++) {
+    if (i % 7 === 0) rows += '<tr>';
+    const d = days[i - first], wk = i % 7 >= 5;
+    if (!d) {
+      rows += `<td style="height:${cellH}px;border:1px solid ${t.line};background:#fafafa"></td>`;
+    } else {
+      const k = dateKey(d), closed = isClosed(d), ws = workers(k);
+      let bg = closed ? '#f3f4f6' : wk ? t.wk : '#fff', body = '';
+      if (closed) {
+        body = `<div style="margin-top:6px;font-size:${fs - 1}px;color:#9ca3af">ร้านปิด</div>`;
+      } else if (person) {
+        const c = color(person);
+        if (ws.includes(person.id)) {
+          bg = c[0];
+          body = `<div style="margin-top:6px;font-size:${fs + 1}px;font-weight:700;color:${c[1]}">✓ ทำงาน</div>
+                  <div style="font-size:${fs - 2}px;color:${c[1]}">${data.start}–${data.end}</div>`;
+        } else if ((data.leave[k] || []).includes(person.id)) {
+          body = `<div style="margin-top:6px;font-size:${fs - 1}px;color:#6b7280">ลา</div>`;
+        }
+      } else {
+        body = `<div style="display:grid;grid-template-columns:${twoCol ? '1fr 1fr' : '1fr'};gap:3px;margin-top:3px">` +
+          ws.map(id => {
+            const e = emp(id), c = color(e);
+            return `<div style="background:${c[0]};color:${c[1]};border-radius:5px;padding:1px 6px;font-size:${fs}px;line-height:1.5;font-weight:600;white-space:nowrap;overflow:hidden">${esc(e.name)}</div>`;
+          }).join('') + '</div>';
+      }
+      const note = data.notes[k]
+        ? `<span style="font-size:${Math.max(9, fs - 4)}px;color:#b45309;white-space:nowrap;overflow:hidden;min-width:0">${esc(data.notes[k])}</span>` : '';
+      rows += `<td style="height:${cellH}px;vertical-align:top;padding:5px 6px;border:1px solid ${t.line};background:${bg}">
+        <div style="height:${cellH - 10}px;overflow:hidden">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px">
+            <span style="flex-shrink:0;font-weight:700;font-size:${fs + 2}px;color:${closed ? '#9ca3af' : wk ? t.head2 : '#1f2937'}">${d.getDate()}</span>${note}
+          </div>${body}
+        </div></td>`;
+    }
+    if (i % 7 === 6) rows += '</tr>';
+  }
+
+  const ps = person ? st[0] : null;
+  const header = `
+    <div style="display:flex;justify-content:space-between;align-items:center;background:linear-gradient(90deg,${t.g1},${t.g2});color:#fff;border-radius:16px;padding:0 26px;height:${headerH}px">
+      <div>
+        <div style="font-size:15px;opacity:.9">${person ? `ตารางงานของ <b>${esc(person.name)}</b>` : 'ตารางงานประจำเดือน'}</div>
+        <div style="font-size:${L ? 28 : 26}px;font-weight:700;line-height:1.3">${esc(data.shopName)}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:${L ? 26 : 24}px;font-weight:700;line-height:1.3">${monthLabel()}</div>
+        <div style="font-size:14px;opacity:.95">เวลาทำงาน ${data.start}–${data.end} น.</div>
+        ${ps ? `<div style="font-size:14px;font-weight:600;margin-top:2px">รวม ${ps.n} วัน${o.pay ? ` · ${money(ps.pay)} บาท` : ''}</div>` : ''}
+      </div>
+    </div>`;
+  const head = DAYS_FULL.map((d, i) =>
+    `<th style="background:${i >= 5 ? t.head2 : t.head};color:#fff;height:${theadH}px;font-size:14px;font-weight:600">${d}</th>`).join('');
+  const legend = person ? '' :
+    `<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:8px;margin-top:12px">` +
+    st.map(s => {
+      const c = color(s.e);
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;background:${c[0]};color:${c[1]};border-radius:10px;padding:0 12px;height:30px;font-size:13px;font-weight:600">
+        <span style="white-space:nowrap;overflow:hidden">● ${esc(s.e.name)}</span>
+        <span style="white-space:nowrap">${s.n} วัน${o.pay ? ` · ${money(s.pay)}฿` : ''}</span></div>`;
+    }).join('') + '</div>';
+
+  const html = `${header}
+    <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-top:12px">
+      <thead><tr>${head}</tr></thead><tbody>${rows}</tbody>
+    </table>
+    ${legend}
+    <div style="text-align:right;font-size:11px;color:#9ca3af;margin-top:6px">อัปเดต ${new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}</div>`;
+  return { html, W, H, P };
+}
+
+function payrollHtml() {
+  const t = THEMES.red, td = 'padding:10px 10px;border-bottom:1px solid #f3d6c7;font-size:15px';
+  const rows = payNumbers().filter(x => x.n || x.adv || x.adj);
+  let tb = 0, ta = 0, tj = 0, tn = 0;
+  const body = rows.map((x, i) => {
+    tb += x.pay; ta += x.adv; tj += x.adj; tn += x.net;
+    const c = color(x.e);
+    return `<tr style="background:${i % 2 ? '#fff7ed' : '#fff'}">
+      <td style="${td}"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${c[1]};margin-right:8px"></span>${esc(x.e.name)}</td>
+      <td style="${td};text-align:center">${x.n}</td>
+      <td style="${td};text-align:right">${money(x.pay)}</td>
+      <td style="${td};text-align:right;color:#dc2626">${x.adv ? '−' + money(x.adv) : '-'}</td>
+      <td style="${td};text-align:right;color:${x.adj < 0 ? '#dc2626' : '#16a34a'}">${x.adj ? (x.adj > 0 ? '+' : '') + money(x.adj) : '-'}</td>
+      <td style="${td};text-align:right;font-weight:700">${money(x.net)}</td>
+      <td style="${td};text-align:center;font-size:13px;color:${x.r.paid ? '#16a34a' : '#9ca3af'}">${x.r.paid ? 'จ่ายแล้ว' : 'รอจ่าย'}</td></tr>`;
+  }).join('');
+  const th = a => `background:${t.head};color:#fff;padding:10px;font-size:14px;font-weight:600;text-align:${a}`;
+  const html = `
+    <div style="display:flex;justify-content:space-between;align-items:center;background:linear-gradient(90deg,${t.g1},${t.g2});color:#fff;border-radius:16px;padding:18px 26px">
+      <div><div style="font-size:15px;opacity:.9">สรุปค่าแรง</div><div style="font-size:26px;font-weight:700;line-height:1.3">${esc(data.shopName)}</div></div>
+      <div style="font-size:24px;font-weight:700">${monthLabel()}</div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-top:14px;border-radius:12px;overflow:hidden">
+      <thead><tr>
+        <th style="${th('left')}">พนักงาน</th><th style="${th('center')}">วัน</th><th style="${th('right')}">ค่าแรง</th>
+        <th style="${th('right')}">เบิก</th><th style="${th('right')}">ปรับ</th><th style="${th('right')}">สุทธิ</th><th style="${th('center')}">สถานะ</th>
+      </tr></thead>
+      <tbody>${body || `<tr><td colspan="7" style="${td};text-align:center;color:#9ca3af">ยังไม่มีข้อมูล</td></tr>`}
+        <tr style="background:#fee2e2;font-weight:700">
+          <td style="${td}" colspan="2">รวม</td><td style="${td};text-align:right">${money(tb)}</td>
+          <td style="${td};text-align:right">${ta ? '−' + money(ta) : '-'}</td><td style="${td};text-align:right">${tj ? (tj > 0 ? '+' : '') + money(tj) : '-'}</td>
+          <td style="${td};text-align:right;font-size:17px">${money(tn)}</td><td style="${td}"></td></tr>
+      </tbody>
+    </table>
+    <div style="text-align:right;font-size:11px;color:#9ca3af;margin-top:8px">อัปเดต ${new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}</div>`;
+  return { html, W: 794, H: null, P: 30 };
+}
+
+async function _render(spec) {
+  if (document.fonts) await Promise.all(['400', '600', '700'].map(w => document.fonts.load(`${w} 16px Prompt`).catch(() => {})));
+  const { html, W, H, P } = spec, el = $('exportPage');
+  Object.assign(el.style, { width: W + 'px', height: H ? H + 'px' : 'auto', padding: P + 'px' });
+  el.innerHTML = html;
+  const h = H || el.scrollHeight;
+  const sx = window.scrollX, sy = window.scrollY;
+  window.scrollTo(0, 0);
+  try {
+    return await html2canvas(el, {
+      scale: 2, backgroundColor: '#ffffff', logging: false, useCORS: true,
+      windowWidth: W + 40, windowHeight: h + 40,
+      onclone: doc => { doc.getElementById('exportWrap').style.cssText = 'position:absolute;left:0;top:0;visibility:visible;overflow:visible'; }
+    });
+  } finally { window.scrollTo(sx, sy); }
+}
+function renderCanvas(spec) { const job = exChain.then(() => _render(spec)); exChain = job.catch(() => {}); return job; }
+
+function setExBusy(b) {
+  $('exLoading').classList.toggle('hidden', !b);
+  ['exPng', 'exPdf', 'exShare'].forEach(id => $(id).disabled = b);
+}
+function canShareFiles() {
+  try { return !!(navigator.canShare && navigator.canShare({ files: [new File([''], 'x.png', { type: 'image/png' })] })); }
+  catch (e) { return false; }
+}
+
+function openExport() {
+  if (!window.html2canvas || !window.jspdf) return toast('โหลดตัวสร้างภาพไม่สำเร็จ ต่ออินเทอร์เน็ตแล้วรีเฟรชหน้าใหม่');
+  if (!data.employees.length) return toast('ยังไม่มีพนักงาน');
+  $('exMonth').textContent = monthLabel();
+  const cur = $('exWho').value;
+  $('exWho').innerHTML = '<option value="">ทุกคน</option>' +
+    stats().map(s => `<option value="${s.e.id}">${esc(s.e.name)}</option>`).join('');
+  if ([...$('exWho').options].some(o => o.value === cur)) $('exWho').value = cur;
+  $('exShare').classList.toggle('hidden', !canShareFiles());
+  $('exPreview').style.opacity = 0;
+  openSheet('exportModal');
+  schedulePreview(150);
+}
+function schedulePreview(delay = 250) {
+  exCanvas = null; setExBusy(true);
+  clearTimeout(exTimer); exTimer = setTimeout(makePreview, delay);
+}
+async function makePreview() {
+  const my = ++exToken;
+  try {
+    const c = await renderCanvas(exportHtml(exOpts()));
+    if (my !== exToken) return;
+    const blob = await toBlob(c);
+    if (my !== exToken) return;
+    exCanvas = c;
+    if (exUrl) URL.revokeObjectURL(exUrl);
+    exUrl = URL.createObjectURL(blob);
+    const img = $('exPreview');
+    img.style.opacity = 0;
+    img.onload = () => img.style.opacity = 1;
+    img.src = exUrl;
+    setExBusy(false);
+  } catch (err) {
+    console.error(err);
+    if (my === exToken) {
+      setExBusy(false);
+      ['exPng', 'exPdf', 'exShare'].forEach(id => $(id).disabled = true);
+      toast('สร้างภาพไม่สำเร็จ ลองเปลี่ยนตัวเลือกอีกครั้ง');
+    }
+  }
+}
+
+const fname = ext => {
+  const w = emp($('exWho').value);
+  return `ตารางงาน-${MONTHS[vm]}-${vy + 543}${w ? '-' + w.name : ''}.${ext}`;
+};
+function dl(url, name) {
+  const a = document.createElement('a'); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function dlBlob(b, name) {
+  const url = URL.createObjectURL(b); dl(url, name);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+async function downloadPng() {
+  if (!exCanvas) return;
+  dlBlob(await toBlob(exCanvas), fname('png'));
+  toast('บันทึกรูปแล้ว ✓');
+}
+function downloadPdf() {
+  if (!exCanvas) return;
+  const L = $('exLayout').value === 'landscape';
+  const pdf = new jspdf.jsPDF({ orientation: L ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
+  pdf.addImage(exCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, L ? 297 : 210, L ? 210 : 297);
+  pdf.save(fname('pdf'));
+  toast('บันทึก PDF แล้ว ✓');
+}
+async function shareImg() {
+  if (!exCanvas) return;
+  const f = new File([await toBlob(exCanvas)], fname('png'), { type: 'image/png' });
+  try { await navigator.share({ files: [f], title: 'ตารางงาน ' + monthLabel() }); }
+  catch (e) { if (e.name !== 'AbortError') toast('แชร์ไม่สำเร็จ ลองกดบันทึกรูปแทน'); }
+}
+async function exportPayroll() {
+  if (!window.html2canvas) return toast('โหลดตัวสร้างภาพไม่สำเร็จ ต่ออินเทอร์เน็ตแล้วรีเฟรชหน้าใหม่');
+  if (!stats().length) return toast('ยังไม่มีพนักงาน');
+  const btn = $('payImgBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> กำลังสร้างภาพ...';
+  try {
+    const c = await renderCanvas(payrollHtml());
+    dlBlob(await toBlob(c), `สรุปค่าแรง-${MONTHS[vm]}-${vy + 543}.png`);
+    toast('บันทึกรูปแล้ว ✓');
+  } catch (e) { console.error(e); toast('สร้างภาพไม่สำเร็จ ลองใหม่อีกครั้ง'); }
+  finally { btn.disabled = false; btn.innerHTML = '🖼️ บันทึกสรุปค่าแรงเป็นรูป'; }
+}
+
+// ================= พนักงาน =================
+function addEmployee(ev) {
+  ev.preventDefault();
+  const name = $('empName').value.trim(), rate = Number($('empRate').value);
+  if (!name) return replay($('empName'), 'shake');
+  if (!(rate > 0)) return replay($('empRate'), 'shake');
+  const used = data.employees.map(e => e.color);
+  let c = PALETTE.findIndex((_, i) => !used.includes(i));
+  if (c < 0) c = data.employees.length % PALETTE.length;
+  const id = uid();
+  data.employees.push({ id, name, rate, color: c, offDays: [], maxDays: 0, active: true });
+  newEmpId = id;
+  save(); ev.target.reset(); $('empName').focus();
+  renderAll(); toast(`เพิ่ม ${name} แล้ว ✓`);
+}
+function openEdit(id) {
+  const e = emp(id); editId = id; editColor = e.color || 0;
+  $('editName').value = e.name; $('editRate').value = e.rate;
+  $('editMax').value = e.maxDays || 0; $('editPause').checked = e.active === false;
+  renderColors(); openSheet('empModal');
+}
+function pickColor(i) { editColor = i; renderColors(); }
+function renderColors() {
+  $('editColors').innerHTML = PALETTE.map((c, i) =>
+    `<button type="button" onclick="pickColor(${i})" class="btn w-9 h-9 rounded-full ${i === editColor ? 'ring-4 ring-offset-2 ring-gray-400' : ''}"
+      style="background:${c[1]}"></button>`).join('');
+}
+function saveEmp() {
+  const name = $('editName').value.trim(), rate = Number($('editRate').value);
+  if (!name) return replay($('editName'), 'shake');
+  if (!(rate > 0)) return replay($('editRate'), 'shake');
+  pushUndo();
+  Object.assign(emp(editId), {
+    name, rate, color: editColor,
+    maxDays: Math.max(0, Math.min(31, parseInt($('editMax').value) || 0)),
+    active: !$('editPause').checked
+  });
+  save(); closeSheet('empModal'); renderAll(); toast('บันทึกแล้ว ✓');
+}
+async function deleteEmployee(id) {
+  const name = emp(id).name;
+  if (!(await ask(`ลบ ${name} ออกจากระบบ?\nถ้าแค่หยุดชั่วคราว กด "แก้ไข" แล้วเลือกพักงานแทน ประวัติจะไม่หาย`, 'ลบ'))) return;
+  pushUndo();
+  data.employees = data.employees.filter(e => e.id !== id);
+  for (const k in data.schedule) data.schedule[k] = data.schedule[k].filter(x => x !== id);
+  for (const k in data.leave) data.leave[k] = data.leave[k].filter(x => x !== id);
+  if (focusId === id) focusId = null;
+  save(); renderAll(); toast(`ลบ ${name} แล้ว`, 'ย้อนกลับ', undo);
+}
+function toggleOff(id, i) {
+  const e = emp(id); e.offDays = e.offDays || [];
+  e.offDays = e.offDays.includes(i) ? e.offDays.filter(x => x !== i) : [...e.offDays, i];
+  save(); renderStaff();
+}
+function renderStaff() {
+  const el = $('staffList');
+  if (!data.employees.length) { el.innerHTML = `<p class="text-gray-500 text-center p-4">ยังไม่มีพนักงาน</p>`; return; }
+  el.innerHTML = data.employees.map(e => {
+    const c = color(e), paused = e.active === false;
+    return `<div class="bg-white rounded-xl shadow p-3 ${e.id === newEmpId ? 'pop' : ''} ${paused ? 'opacity-60' : ''}">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0 flex-wrap">
+          <span class="w-3 h-3 rounded-full shrink-0" style="background:${c[1]}"></span>
+          <span class="font-semibold truncate">${esc(e.name)}</span>
+          <span class="text-sm text-gray-500 whitespace-nowrap">${money(e.rate)} ฿/วัน</span>
+          ${e.maxDays ? `<span class="text-[11px] bg-blue-50 text-blue-700 rounded px-1.5">สูงสุด ${e.maxDays} วัน/เดือน</span>` : ''}
+          ${paused ? `<span class="text-[11px] bg-gray-700 text-white rounded px-1.5">พักงาน</span>` : ''}
+        </div>
+        <div class="whitespace-nowrap"><button onclick="openEdit('${e.id}')" class="btn text-blue-600 px-2">แก้ไข</button>
+          <button onclick="deleteEmployee('${e.id}')" class="btn text-red-600 px-2">ลบ</button></div>
+      </div>
+      <div class="flex flex-wrap gap-1 mt-2 items-center"><span class="text-xs text-gray-500 mr-1">หยุดประจำ:</span>
+        ${DAYS.map((d, i) => {
+          const off = (e.offDays || []).includes(i);
+          return `<button onclick="toggleOff('${e.id}',${i})" class="btn text-xs rounded-full px-2.5 py-1 ${off ? 'bg-gray-700 text-white' : 'bg-gray-100'}">${d}</button>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  newEmpId = null;
+}
+
+// ================= ตั้งค่า =================
+function renderSettings() {
+  $('shopName').value = data.shopName; $('tStart').value = data.start; $('tEnd').value = data.end;
+  $('balanceBy').value = data.balanceBy; $('maxStreak').value = data.maxStreak;
+  $('needGrid').innerHTML = DAYS.map((d, i) => `<label class="text-center text-sm">${d}
+    <input type="number" min="0" max="20" inputmode="numeric" value="${data.need[i]}" onchange="setNeed(${i}, this.value)"
+      class="w-full border rounded-lg p-2 mt-1 text-center"></label>`).join('');
+  $('backupInfo').textContent = data.lastBackup
+    ? `สำรองล่าสุด ${new Date(data.lastBackup).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}`
+    : 'ยังไม่เคยสำรองข้อมูล';
+}
+function setNeed(i, v) { data.need[i] = Math.max(0, Math.min(20, parseInt(v) || 0)); save(); renderCalendar(); }
+function setNum(f, v, min, max) { data[f] = Math.max(min, Math.min(max, parseInt(v) || 0)); save(); renderAll(); }
+function setField(f, v) {
+  if (f === 'shopName') v = v.trim() || 'ร้านหม่าล่าทอด';
+  if ((f === 'start' || f === 'end') && !v) return renderSettings();
+  data[f] = v; save(); renderAll();
+}
+function exportData() {
+  data.lastBackup = Date.now(); save();
+  dlBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), `mala-backup-${dateKey(new Date())}.json`);
+  renderBackup(); renderSettings(); toast('ดาวน์โหลดไฟล์สำรองแล้ว ✓');
+}
+function importData(input) {
+  const f = input.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const d = JSON.parse(r.result);
+      if (!Array.isArray(d.employees)) throw new Error('bad');
+      pushUndo();
+      localStorage.setItem(KEY, JSON.stringify(d)); data = load(); save();
+      renderAll('stagger'); toast('นำเข้าข้อมูลแล้ว ✓', 'ย้อนกลับ', undo);
+    } catch (e) { toast('ไฟล์ไม่ถูกต้อง'); }
+    input.value = '';
+  };
+  r.readAsText(f);
+}
+async function resetAll() {
+  if (!(await ask('ลบข้อมูลทั้งหมด?\nแนะนำให้ดาวน์โหลดไฟล์สำรองก่อน', 'ลบทั้งหมด'))) return;
+  pushUndo(); data = clone(DEFAULT); focusId = null; save(); renderAll();
+  toast('ลบข้อมูลทั้งหมดแล้ว', 'ย้อนกลับ', undo);
+}
+
+// ================= ปัดเปลี่ยนเดือน =================
+(() => {
+  let x0 = null, y0 = 0;
+  const el = $('calWrap');
+  el.addEventListener('touchstart', e => { const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; }, { passive: true });
+  el.addEventListener('touchend', e => {
+    if (x0 === null) return;
+    const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+    x0 = null;
+    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) changeMonth(dx < 0 ? 1 : -1);
+  }, { passive: true });
+})();
+
+// ================= เริ่มต้น =================
+function renderAll(anim) {
+  $('headerName').textContent = data.shopName;
+  renderBackup(); renderFocus(); renderCalendar(anim); renderPayroll();
+  renderStaff(); renderSettings(); updateUndo();
+}
+renderAll('stagger');
+</script>
+</body>
+</html>
